@@ -1,145 +1,183 @@
 #include <iostream>
 #include <vector>
-#include <cstdlib>
+#include <random>
 #include <ctime>
-
+#include <queue>
 using namespace std;
 
 class Minesweeper {
-public:
-    Minesweeper(int width, int height, int mines) 
-        : width(width), height(height), mines(mines) {
-        initializeBoard();
-        placeMines();
-        calculateAdjacentMines();
-    }
-
-    void playGame() { // add functionality to FLAG here
-        bool gameOver = false;
-        while (!gameOver) {
-            printBoard();
-            int x, y;
-            cout << "Enter row and column to reveal (e.g., 1 1): ";
-            cin >> x >> y;
-            if (reveal(x - 1, y - 1)) {
-                cout << "You hit a mine! Game Over. This is the minefield" << endl;
-                for (int i =0;i<height;i++)
-                {
-                    for (int j =0; j<width;j++)
-                    {
-                        cout << board[i][j] << " ";
-                    }
-                    cout<<endl;
-                }
-                gameOver = true;
-            } else {
-                if (checkWin()) {
-                    cout << "Congratulations! You've cleared the minefield!" << endl;
-                    gameOver = true;
-                }
-            }
-        }
-    }
-
 private:
-    int width, height, mines;
-    vector<vector<char>> board;
-    vector<vector<char>> displayBoard;
-
-    void initializeBoard() {
-        board.resize(height, vector<char>(width, '0'));
-        displayBoard.resize(height, vector<char>(width, '*'));
+    struct Cell {
+        bool isMine;
+        bool isRevealed;
+        bool isFlagged;
+        int adjacentMines;
+        
+        Cell() : isMine(false), isRevealed(false), isFlagged(false), adjacentMines(0) {}
+    };
+    
+    vector<vector<Cell>> board;
+    int rows, cols, mines;
+    bool gameOver;
+    int revealedCells;
+    
+    // Direction arrays for checking adjacent cells
+    const int dx[8] = {-1, -1, -1, 0, 0, 1, 1, 1};
+    const int dy[8] = {-1, 0, 1, -1, 1, -1, 0, 1};
+    
+    bool isValid(int x, int y) const {
+        return x >= 0 && x < rows && y >= 0 && y < cols;
     }
-
-    void placeMines() {
-        srand(time(0));
+    
+    void placeMines(int firstX, int firstY) {
+        random_device rd;
+        mt19937 gen(rd());
+        uniform_int_distribution<> disX(0, rows - 1);
+        uniform_int_distribution<> disY(0, cols - 1);
+        
         int placedMines = 0;
         while (placedMines < mines) {
-            int x = rand() % height;
-            int y = rand() % width;
-            if (board[x][y] == '0') {
-                board[x][y] = 'M';
+            int x = disX(gen);
+            int y = disY(gen);
+            
+            // Don't place mine on first click or where a mine already exists
+            if (!board[x][y].isMine && !(x == firstX && y == firstY)) {
+                board[x][y].isMine = true;
                 placedMines++;
-            }
-        }
-    }
-
-    void calculateAdjacentMines() {
-        for (int i = 0; i < height; ++i) {
-            for (int j = 0; j < width; ++j) {
-                if (board[i][j] == 'M') continue;
-                int mineCount = 0;
-                for (int x = -1; x <= 1; ++x) {
-                    for (int y = -1; y <= 1; ++y) {
-                        int ni = i + x, nj = j + y;
-                        if (ni >= 0 && ni < height && nj >= 0 && nj < width && board[ni][nj] == 'M') {
-                            mineCount++;
-                        }
+                
+                // Update adjacent mine counts
+                for (int i = 0; i < 8; i++) {
+                    int newX = x + dx[i];
+                    int newY = y + dy[i];
+                    if (isValid(newX, newY)) {
+                        board[newX][newY].adjacentMines++;
                     }
                 }
-                board[i][j] = '0' + mineCount;
+            }
+        }
+    }
+    
+    void revealCell(int x, int y) {
+        if (!isValid(x, y) || board[x][y].isRevealed || board[x][y].isFlagged) {
+            return;
+        }
+        
+        board[x][y].isRevealed = true;
+        revealedCells++;
+        
+        // If cell has no adjacent mines, reveal adjacent cells
+        if (board[x][y].adjacentMines == 0 && !board[x][y].isMine) {
+            for (int i = 0; i < 8; i++) {
+                revealCell(x + dx[i], y + dy[i]);
             }
         }
     }
 
-    bool reveal(int x, int y) {
-        if (x < 0 || x >= height || y < 0 || y >= width || displayBoard[x][y] != '*') {
+public:
+    Minesweeper(int r, int c, int m) : rows(r), cols(c), mines(m), gameOver(false), revealedCells(0) {
+        board = vector<vector<Cell>>(rows, vector<Cell>(cols));
+    }
+    
+    bool makeMove(int x, int y, bool flag) {
+        if (!isValid(x, y) || gameOver) {
             return false;
         }
-        displayBoard[x][y] = board[x][y];
-        if (board[x][y] == 'M') {
+        
+        if (flag) {
+            if (!board[x][y].isRevealed) {
+                board[x][y].isFlagged = !board[x][y].isFlagged;
+            }
             return true;
         }
-        if (board[x][y] == '0') {
-            for (int dx = -1; dx <= 1; ++dx) {
-                for (int dy = -1; dy <= 1; ++dy) {
-                    if (dx != 0 || dy != 0) {
-                        reveal(x + dx, y + dy);
-                    }
-                }
-            }
+        
+        if (board[x][y].isFlagged) {
+            return true;
         }
-        return false;
-    }
-
-    bool checkWin() {
-        for (int i = 0; i < height; ++i) {
-            for (int j = 0; j < width; ++j) {
-                if (displayBoard[i][j] == '*' && board[i][j] != 'M') {
-                    return false;
-                }
-            }
+        
+        // First move
+        if (revealedCells == 0) {
+            placeMines(x, y);
         }
+        
+        if (board[x][y].isMine) {
+            gameOver = true;
+            return false;
+        }
+        
+        revealCell(x, y);
         return true;
     }
-
-    void printBoard() {
-        cout << "  ";
-        for (int j = 0; j < width; ++j) {
-            cout << j + 1 << " ";
+    
+    bool hasWon() const {
+        return revealedCells == (rows * cols - mines);
+    }
+    
+    bool isGameOver() const {
+        return gameOver;
+    }
+    
+    void printBoard(bool showAll = false) const {
+        // Print column numbers
+        cout << "   ";
+        for (int j = 0; j < cols; j++) {
+            cout << j << " ";
         }
-        cout << endl;
-        for (int i = 0; i < height; ++i) {
-            cout << i + 1 << " ";
-            for (int j = 0; j < width; ++j) {
-                cout << displayBoard[i][j] << " ";
+        cout << "\n   ";
+        for (int j = 0; j < cols; j++) {
+            cout << "--";
+        }
+        cout << "\n";
+        
+        for (int i = 0; i < rows; i++) {
+            cout << i << "| ";
+            for (int j = 0; j < cols; j++) {
+                if (board[i][j].isFlagged && !showAll) {
+                    cout << "F ";
+                }
+                else if (!board[i][j].isRevealed && !showAll) {
+                    cout << ". ";
+                }
+                else if (board[i][j].isMine) {
+                    cout << "* ";
+                }
+                else {
+                    cout << (board[i][j].adjacentMines == 0 ? " " : to_string(board[i][j].adjacentMines)) << " ";
+                }
             }
-            cout << endl;
+            cout << "\n";
         }
     }
 };
 
 int main() {
-    int width, height, mines;
-    cout << "Enter board width: ";
-    cin >> width;
-    cout << "Enter board height: ";
-    cin >> height;
-    cout << "Enter number of mines: ";
-    cin >> mines;
-
-    Minesweeper game(width, height, mines);
-    game.playGame();
-
+    int rows = 9, cols = 9, mines = 10;
+    Minesweeper game(rows, cols, mines);
+    
+    cout << "Welcome to Minesweeper!\n";
+    cout << "Enter moves as: row col [f]\n";
+    cout << "Add 'f' to flag/unflag a cell\n\n";
+    
+    while (!game.isGameOver() && !game.hasWon()) {
+        game.printBoard();
+        
+        int row, col;
+        string flag;
+        cout << "\nEnter move: ";
+        cin >> row >> col;
+        getline(cin, flag);
+        
+        bool isFlag = flag.find('f') != string::npos;
+        if (!game.makeMove(row, col, isFlag)) {
+            cout << "\nGame Over! You hit a mine!\n";
+            game.printBoard(true);
+            break;
+        }
+        
+        if (game.hasWon()) {
+            cout << "\nCongratulations! You've won!\n";
+            game.printBoard(true);
+        }
+    }
+    
     return 0;
 }
